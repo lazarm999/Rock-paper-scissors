@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 import threading
@@ -5,12 +6,14 @@ import threading
 from keras.models import load_model
 from playsound import playsound
 
+from utils import dim, get_prediction_text
+
 game_started = False
 font_size = 1
 last_winner = ""
 color = (255, 0, 0)
 
-def play_game():
+def play_game(model_name='model'):
     global game_started
     global last_winner
     global color
@@ -18,10 +21,10 @@ def play_game():
     cv2.namedWindow('test', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('test', 1080, 720)
     img_counter = 1
-    model = load_model('mobilenet_model_v{}.h5'.format(str(int(open("version.txt", "r").readline()) - 1)))
+    model_path = os.path.join('models', f'{model_name}.h5')
+    model = load_model(model_path)
     cam_w = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH)) #640
     cam_h = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT)) #480
-    print(cam_w, cam_h)
     while True:
         if img_counter == 5000:
             ret, frame = cam.read()
@@ -33,10 +36,8 @@ def play_game():
             if game_started:
                 p1_hand = frame[0:cam_h, 0:int(cam_w / 2)]
                 p2_hand = frame[0:479, int(cam_w / 2):cam_w]
-                p1_hand = [cv2.resize(p1_hand, (width, height), interpolation=cv2.INTER_CUBIC)]
-                p2_hand = [cv2.resize(p2_hand, (width, height), interpolation=cv2.INTER_CUBIC)]
-                # cv2.imshow("p1", p1_hand[0])
-                # cv2.imshow("p2", p2_hand[0])
+                p1_hand = [cv2.resize(p1_hand, (dim, dim), interpolation=cv2.INTER_CUBIC)]
+                p2_hand = [cv2.resize(p2_hand, (dim, dim), interpolation=cv2.INTER_CUBIC)]
                 p1_prediction = model.predict(np.divide(p1_hand, 255))
                 p2_prediction = model.predict(np.divide(p2_hand, 255))
                 p1_prediction_text = get_prediction_text(p1_prediction)
@@ -89,15 +90,11 @@ def start_game():
     else:
         color = (255, 0, 0)
 
-def get_prediction_text(prediction):
-    maks = max(prediction[0][0], prediction[0][1], prediction[0][2])
-    if maks == prediction[0][0]:
-        return "papir"
-    elif maks == prediction[0][1]:
-        return "kamen"
-    else:
-        return "makaze"
-
-
 if __name__ == '__main__':
-    play_game()
+    import argparse
+    parser = argparse.ArgumentParser(description='Start the game.')
+    parser.add_argument('-m', '--model', type=str, default='model', help='Name of the model in h5 format in the models directory \
+        to load for the game, defaults to \'model\'.')
+    
+    args = parser.parse_args()
+    play_game(model_name=args.model)

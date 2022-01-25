@@ -1,55 +1,19 @@
-import cv2
-import numpy as np
-from sklearn.model_selection import train_test_split
+import os
 
 import matplotlib.pyplot as plt
 
-import os
-
-from keras.layers import Dense, GlobalAveragePooling2D, Dropout, MaxPool2D, Flatten
+import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
-from keras.preprocessing.image import ImageDataGenerator
-from keras.models import load_model, Model, Sequential
+from keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from keras.models import load_model, Sequential
 from keras.callbacks import LearningRateScheduler
 from keras.applications.mobilenet_v2 import MobileNetV2 
-from keras.regularizers import l2
-import tensorflow as tf
 
-gpus = tf.config.experimental.list_physical_devices('GPU') 
-tf.config.experimental.set_memory_growth(gpus[0], True)
+from utils import l_rate, dim, step_decay, data_generator
 
-l_rate = 0.0007
-height = 300
-width = 200
-
-def step_decay(epoch):
-    drop = 0.5
-    epochs_drop = 10.0
-    lrate = l_rate * np.math.pow(drop, np.math.floor((1+epoch)/epochs_drop))
-    return lrate
-
-def data_generator(data_path, batch_size=16, validation=False):
-    if validation:
-        datagen = ImageDataGenerator(
-            rescale=1./255)        
-    else:
-        datagen = ImageDataGenerator(
-            rescale=1./255,
-            rotation_range=20,
-            width_shift_range=0.2,
-            height_shift_range=0.2,
-            shear_range=0.2,
-            zoom_range=0.2,
-            brightness_range=(0.6, 1.6),
-            horizontal_flip=True,
-            vertical_flip=True,
-            fill_mode='nearest')
-    gen = datagen.flow_from_directory(
-        data_path,
-        target_size=(width, height),
-        batch_size=batch_size,
-        class_mode='categorical')
-    return gen
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if len(gpus) > 0:
+    tf.config.experimental.set_memory_growth(gpus[0], True)
 
 def train_model(train_dir, val_dir, model_name='model', epochs=25, batch_size=16, checkpoint=None):
 
@@ -57,7 +21,7 @@ def train_model(train_dir, val_dir, model_name='model', epochs=25, batch_size=16
         model_path = os.path.join('models', f'{checkpoint}.h5')
         model = load_model(model_path)
     else:
-        model_base = MobileNetV2(weights='imagenet', include_top=False, input_shape=(height, width, 3))
+        model_base = MobileNetV2(weights='imagenet', include_top=False, input_shape=(dim, dim, 3))
         model = Sequential()
         model.add(model_base)
         model.add(GlobalAveragePooling2D())
@@ -67,12 +31,12 @@ def train_model(train_dir, val_dir, model_name='model', epochs=25, batch_size=16
     model.summary()
     model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=l_rate), metrics=['acc'])
 
-    train_generator = data_generator(train_dir)
-    val_generator = data_generator(val_dir, validation=True)
+    train_generator = data_generator(train_dir, batch_size=batch_size)
+    val_generator = data_generator(val_dir, batch_size=batch_size, validation=True)
     
     lrate = LearningRateScheduler(step_decay)
     history = model.fit_generator(train_generator, steps_per_epoch=train_generator.n // batch_size,
-                                  epochs=25,
+                                  epochs=epochs,
                                   validation_data=val_generator,
                                   validation_steps=val_generator.n // batch_size,
                                   verbose=2,
@@ -105,8 +69,21 @@ def plot_model_history(history):
     plt.show()
 
 if __name__ == '__main__':
-    train_dir = r'C:\Users\vukbibic\Desktop\Papir kamen makaze veci\data\dataset'
-    val_dir = r'C:\Users\vukbibic\Desktop\Papir kamen makaze veci\data\test images'
-    model, history = train_model(train_dir, val_dir, batch_size=8)
+    import argparse
+    parser = argparse.ArgumentParser(description='This module is used for training the Rock, paper, scissors model.')
+    parser.add_argument('train_data_path', type=str, help='The path to your training data directory, \
+        which has 3 subdirectories correspoding to the rock, paper and scissors class.')
+    parser.add_argument('val_data_path', type=str, help='The path to your validation data directory, \
+    which has 3 subdirectories correspoding to the rock, paper and scissors class.')
+    parser.add_argument('-e', '--epochs', type=int, default=25, help='The number of epochs for training the model, defaults to 25.')
+    parser.add_argument('-b', '--batch_size', type=int, default=16, help='The batch size used for training, defaults to 16.')
+    parser.add_argument('-m', '--model', type=str, default='model', help='Name of the model used for saving the model in h5 format in the models directory\
+        after training is finished, defaults to \'model\'.')
+    parser.add_argument('--cp', type=str, default=None, help='Name of the MobileNetv2 model already saved in h5 format in the models directory\
+        from which to continue training, defaults to None, which means a randomly initialized model will be instantiated.')
+    
+    args = parser.parse_args()
+    model, history = train_model(args.train_data_path, args.val_data_path, model_name=args.model, epochs=args.epochs,
+        batch_size=args.batch_size, checkpoint=args.cp)
     plot_model_history(history)
     
